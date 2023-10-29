@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+export $(dbus-launch)
+
+SCRIPTPATH="$(
+	cd "$(dirname "$0")"
+	pwd -P
+)"
+
+#down the last running theme
+if [ -f "/tmp/leftwm-theme-down" ]; then
+	/tmp/leftwm-theme-down
+	rm -f /tmp/leftwm-theme-down
+fi
+ln -s $SCRIPTPATH/down /tmp/leftwm-theme-down
+
+# check if dunst is installed and if it is, copy the config
+if command -v dunst; then
+	DUNSTDIR=$HOME/.config/dunst
+
+	# create the config dir if nonexistant
+	if [ ! -d "$DUNSTDIR" ]; then
+		mkdir -p $DUNSTDIR
+	fi
+
+	DUNSTRCPATH="$DUNSTDIR/dunstrc"
+
+	# check if the rc file exists and move it if it does
+	if [ -f "$DUNSTRCPATH" ]; then
+		mv "$DUNSTRCPATH" "$DUNSTRCPATH.old"
+	fi
+	# Copy the template file to the user config directory
+	cp $SCRIPTPATH/dunstrc.tmpl $DUNSTRCPATH
+
+	# kill previous session and start another in a detached shell to prevent dunst taking the shell
+	bash -c "pkill dunst && dunst"
+fi
+
+# Install rofi theme if rofi exists on the system
+if command -v rofi; then
+	ROFIDIR=$HOME/.config/rofi
+
+	if [ ! -d "$ROFIDIR" ]; then
+		mkdir -p $ROFIDIR
+	fi
+
+	ROFITHEMEPATH="$ROFIDIR/themes"
+
+	if [ ! -d "$ROFITHEMEPATH" ]; then
+		mkdir -p $ROFITHEMEPATH
+	fi
+
+	cp "$SCRIPTPATH/catppuccin.rasi" $ROFITHEMEPATH
+
+	# preserve the old rofi config if there is one
+	if [ -f "$ROFIDIR/config.rasi" ]; then
+		mv "$ROFIDIR/config.rasi" "$ROFIDIR/config.rasi.old"
+	fi
+
+	# echo "@theme $SCRIPTPATH/catppuccin.rasi" >"$ROFIDIR/config.rasi"
+	cp "$SCRIPTPATH/catppuccin.rasi" "$ROFIDIR/config.rasi"
+
+fi
+
+if command -v btop; then
+	BTOPDIR=$HOME/.config/btop/
+
+	if [ ! -d "$BTOPDIR" ]; then
+		mkdir -p "$BTOPDIR"
+	fi
+
+	BTOPTHEMES=$BTOPDIR/themes
+	if [ ! -d "$BTOPTHEMES" ]; then
+		mkdir -p "$BTOPTHEMES"
+	fi
+
+	cp "$SCRIPTPATH/btop.theme" "$BTOPTHEMES/catppuccin.theme"
+	cp "$SCRIPTPATH/btop.conf" "$BTOPDIR/btop.conf"
+fi
+
+if command -v kitty; then
+	KITTYDIR=$HOME/.config/kitty/
+
+	if [ ! -d "$KITTYDIR" ]; then
+		mkdir -p "$KITTYDIR"
+	fi
+
+	rm -f "$KITTYDIR/current-theme.conf"
+	cp "$SCRIPTPATH/kitty-catppuccin.conf" "$KITTYDIR/catppuccin-mocha.conf"
+	ln -s "$KITTYDIR/catppuccin-mocha.conf" "$KITTYDIR/current-theme.conf"
+
+	if [ -f "$KITTYDIR/kitty.conf" ]; then
+		mv "$KITTYDIR/kitty.conf" "$KITTYDIR/kitty.conf.old"
+	fi
+
+	cp "$SCRIPTPATH/kitty.conf" "$KITTYDIR/kitty.conf"
+fi
+
+#boot compton or picom if it exists
+if [ -x "$(command -v compton)" ]; then
+	compton &>/dev/null &
+elif [ -x "$(command -v picom)" ]; then
+	picom &>/dev/null &
+fi
+
+#set background
+if [ -x "$(command -v feh)" ]; then
+	feh --bg-fill "$SCRIPTPATH"/wallpaper.png
+fi
+
+cp "$SCRIPTPATH/xresources" "$HOME/.Xresources"
+xrdb -merge "$HOME/.Xresources"
+
+#set the theme.toml config
+leftwm-command "LoadTheme $SCRIPTPATH/theme.toml"
+
+#boot polybar based on the number of monitors found
+if [ -x "$(command -v polybar)" ]; then
+	pkill polybar
+	monitors="$(polybar -m | sed s/:.*// | tac)"
+	bars="mainbar"
+	while read -r display; do
+		for bar in $bars; do
+			MONITOR=$display polybar -c "$SCRIPTPATH/polybar.config" "$bar" &>/dev/null &
+		done
+	done <<<"$monitors"
+	exit 0
+fi
